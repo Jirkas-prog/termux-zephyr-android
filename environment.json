@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "version": "1.0.0",
+  "version_code": 10000,
+  "zephyr": "v4.4.2",
+  "modules": ["hal_espressif", "hal_xtensa", "mbedtls", "mcuboot", "zcbor", "tf-psa-crypto"],
+  "course_revision": "77135146ee868f8357a20ed5844f1e2c6595dcb0",
+  "board": "m5stack_fire/esp32/procpu",
+  "toolchain": "xtensa-espressif_esp32_zephyr-elf",
+  "ubuntu": "ubuntu:24.04",
+  "esp_qemu_release": "esp-develop-9.0.0-20240606",
+  "esp_qemu_sha256": {
+    "aarch64": "43552f32b303a6820d0d9551903e54fc221aca98ccbd04e5cbccbca881548008",
+    "x86_64": "071d117c44a6e9a1bc8664ab63b592d3e17ceb779119dcb46c59571a4a7a88c9"
+  },
+  "termux": "v0.118.3",
+  "termux_certificate_sha256": "b6da01480eefd5fbf2cd3771b8d1021ec791304bdd6c4bf41d3faabad48ee5e1"
+}

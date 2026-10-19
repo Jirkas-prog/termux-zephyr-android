@@ -1,0 +1,63 @@
+name: Android
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Controller and shell checks
+        run: |
+          python3 -m unittest discover -s tests -v
+          bash -n scripts/termux-bootstrap.sh scripts/linux-install.sh scripts/linux-action.sh
+      - name: Build development APK
+        run: python3 tools/build.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zephyr-development-apk
+          path: dist/
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Validate version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 -c 'import json,os; assert os.environ["RELEASE_TAG"] == "v" + json.load(open("environment.json"))["version"]'
+      - name: Build signed release
+        env:
+          SIGNING_KEY_BASE64: ${{ secrets.SIGNING_KEY_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          test -n "$SIGNING_KEY_BASE64"
+          export KEYSTORE_PATH="$RUNNER_TEMP/zephyr-release.jks"
+          trap 'rm -f "$KEYSTORE_PATH"' EXIT
+          printf '%s' "$SIGNING_KEY_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          python3 tools/build.py
+      - name: Publish APK and checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" dist/zephyr-termux.apk dist/SHA256SUMS.txt --title "Zephyr pro Termux $RELEASE_TAG" --notes-file RELEASE.md
