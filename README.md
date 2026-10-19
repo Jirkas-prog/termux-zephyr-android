@@ -12,6 +12,7 @@ a stáhnout aktualizace z GitHubu. **Root, Magisk, odemknutí bootloaderu ani Do
 2. V průvodci zvolte **1 Stáhnout Termux**. APK se bere přímo z
    [oficiálních GitHub Releases](https://github.com/termux/termux-app/releases).
    Po instalaci Termux jednou otevřete a nechte dokončit přípravu terminálu.
+   Povolte oznámení a běh na pozadí, pokud se Android zeptá.
 3. Vraťte se do průvodce, zvolte **2 Propojit Termux**, otevřete Termux,
    vložte zkopírovaný příkaz a potvrďte Enter. Na dotyku: dlouhé podržení → Paste.
 4. Po dokončení přepněte zpět, zvolte **3 Povolit příkazy** a udělte oprávnění Androidu.
