@@ -37,7 +37,10 @@ if os.environ.get('ANDROID_SERIAL'):
     adb += ['-s', os.environ['ANDROID_SERIAL']]
 run(*adb, 'install', '-r', ROOT / 'dist/zephyr-termux.apk')
 run(*adb, 'install', '-r', BUILD / 'test.apk')
-result = subprocess.run(list(map(str, [*adb, 'shell', 'am', 'instrument', '-w', '-e', 'orientation', os.environ.get('SMOKE_ORIENTATION', 'landscape'), 'cz.zephyr.termux.tests/cz.zephyr.termux.SmokeTests'])), capture_output=True, text=True, check=True)
-print(result.stdout)
-if 'PASS:' not in result.stdout or 'FAIL:' in result.stdout:
-    raise SystemExit('Android smoke test failed')
+for operation in ([], ['-e', 'operation', 'regressions']):
+    result = subprocess.run(list(map(str, [*adb, 'shell', 'am', 'instrument', '-w', '-e', 'orientation',
+        os.environ.get('SMOKE_ORIENTATION', 'landscape'), *operation,
+        'cz.zephyr.termux.tests/cz.zephyr.termux.SmokeTests'])), capture_output=True, text=True, check=True)
+    print(result.stdout)
+    if 'PASS:' not in result.stdout or 'FAIL:' in result.stdout:
+        raise SystemExit('Android test failed')

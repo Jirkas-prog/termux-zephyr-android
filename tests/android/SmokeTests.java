@@ -13,6 +13,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.ScrollView;
+import android.widget.Spinner;
 import java.io.File;
 import java.io.FileOutputStream;
 
@@ -71,6 +72,45 @@ public final class SmokeTests extends Instrumentation {
         MotionEvent up = MotionEvent.obtain(time, time + 30, MotionEvent.ACTION_UP, x, y, 0);
         up.setSource(InputDevice.SOURCE_TOUCHSCREEN); sendPointerSync(up); up.recycle(); waitForIdleSync();
     }
+    private Spinner spinner(View view) {
+        if (view instanceof Spinner) return (Spinner) view;
+        if (view instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) view).getChildCount(); i++) {
+            Spinner result = spinner(((ViewGroup) view).getChildAt(i));
+            if (result != null) return result;
+        }
+        return null;
+    }
+    private void regressions() throws Exception {
+        android.content.SharedPreferences prefs = getTargetContext().getSharedPreferences("bridge", 0);
+        java.util.Map<String, ?> original = prefs.getAll();
+        try {
+            prefs.edit().remove("pending:" + prefs.getString("active:status", ""))
+                .putString("status", "{\"apps\":[\"hello_world\",\"threads\"]}")
+                .putString("active:status", "slow-test").putString("pending:slow-test", "status")
+                .putLong("status_requested", System.currentTimeMillis()).commit();
+            SystemClock.sleep(7500); // More than one poll interval: a slow reply must still be accepted.
+            require(prefs.contains("pending:slow-test"), "Polling invalidates a slow Termux reply");
+            runOnMainSync(() -> spinner(activity.getWindow().getDecorView()).setSelection(1));
+            runOnMainSync(() -> activity.onConfigurationChanged(new android.content.res.Configuration(activity.getResources().getConfiguration())));
+            runOnMainSync(() -> require("threads".equals(spinner(activity.getWindow().getDecorView()).getSelectedItem()), "Rotation lost selected exercise"));
+            prefs.edit().putString("pending:failed-test", "build").putString("active:build", "failed-test").commit();
+            Bundle failed = new Bundle(); failed.putInt("exitCode", 1); failed.putString("stderr", "build failure remains visible");
+            new ResultReceiver().onReceive(getTargetContext(), new Intent().setData(android.net.Uri.parse("zephyr://result/failed-test")).putExtra("result", failed));
+            Bundle status = new Bundle(); status.putInt("exitCode", 0); status.putString("stdout", "{\"busy\":false}");
+            new ResultReceiver().onReceive(getTargetContext(), new Intent().setData(android.net.Uri.parse("zephyr://result/slow-test")).putExtra("result", status));
+            require(!prefs.contains("active:status") && !prefs.contains("pending:slow-test"), "Completed callback was not cleared");
+            require(prefs.getString("error", "").contains("build failure"), "Successful status hid an operation failure");
+        } finally {
+            android.content.SharedPreferences.Editor restore = prefs.edit().clear();
+            for (java.util.Map.Entry<String, ?> entry : original.entrySet()) {
+                Object value = entry.getValue();
+                if (value instanceof String) restore.putString(entry.getKey(), (String) value);
+                else if (value instanceof Long) restore.putLong(entry.getKey(), (Long) value);
+                else if (value instanceof Boolean) restore.putBoolean(entry.getKey(), (Boolean) value);
+            }
+            restore.commit();
+        }
+    }
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
@@ -87,6 +127,11 @@ public final class SmokeTests extends Instrumentation {
             runOnMainSync(() -> inspect(activity.getWindow().getDecorView()));
             require(checkedButtons >= 15 && scroll != null && setup != null, "Dashboard incomplete");
             if (operation != null) {
+                if (operation.equals("regressions")) {
+                    regressions();
+                    result.putString("stream", "PASS: slow callbacks, exercise selection after rotation, operation errors survive polling.");
+                    finish(Activity.RESULT_OK, result); return;
+                }
                 if (operation.equals("download-termux") || operation.equals("download-self")) {
                     File apk = Updates.download(getTargetContext(), operation.equals("download-termux"), message -> android.util.Log.i("ZephyrTest", message));
                     require(apk.length() > 10000, "Downloaded APK is incomplete");

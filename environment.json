@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "version": "1.0.1",
-  "version_code": 10001,
+  "version": "1.0.2",
+  "version_code": 10002,
   "zephyr": "v4.4.2",
   "modules": ["hal_espressif", "hal_xtensa", "mbedtls", "mcuboot", "zcbor", "tf-psa-crypto"],
   "course_revision": "77135146ee868f8357a20ed5844f1e2c6595dcb0",

@@ -34,6 +34,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -47,15 +48,20 @@ public final class MainActivity extends Activity {
     private SharedPreferences prefs;
     private final List<Button> commands = new ArrayList<>();
     private final List<String> appNames = new ArrayList<>();
-    private boolean active, downloading;
+    private boolean active;
+    private static final AtomicBoolean downloading = new AtomicBoolean();
     private long lastRequest, lastReceived;
     private String selected = "hello_world";
     private Runnable afterPermission;
     private final Runnable poll = new Runnable() {
         @Override public void run() {
             if (!active) return;
+            String message = prefs.getString("notice", "");
+            if (!message.isEmpty() && !message.contentEquals(notice.getText())) notice.setText(message);
             renderStatus();
             if (hasBridge() && System.currentTimeMillis() - lastRequest > 5000) command("status");
+            String ready = prefs.getString("ready_apk", "");
+            if (!ready.isEmpty() && (Build.VERSION.SDK_INT < 26 || getPackageManager().canRequestPackageInstalls())) installApk(new File(getFilesDir(), ready));
             handler.postDelayed(this, 1500);
         }
     };
@@ -171,7 +177,10 @@ public final class MainActivity extends Activity {
         exercises = new Spinner(this); exercises.setId(View.generateViewId()); exerciseLabel.setLabelFor(exercises.getId());
         exercises.setMinimumHeight(dp(56)); exercises.setContentDescription("Vybrané cvičení");
         body.addView(exercises, new LinearLayout.LayoutParams(-1, dp(56)));
-        setExercises(new JSONArray().put("hello_world"));
+        try {
+            JSONArray names = new JSONObject(prefs.getString("status", "{}")).optJSONArray("apps");
+            setExercises(names == null ? new JSONArray() : names);
+        } catch (Exception ignored) { setExercises(new JSONArray()); }
         GridLayout work = grid();
         add(work, "Sestavit  ·  Ctrl+B", () -> permission(() -> command("build")), true);
         add(work, "Spustit  ·  Ctrl+R", () -> permission(() -> command("run")), true);
@@ -241,15 +250,22 @@ public final class MainActivity extends Activity {
 
     private void command(String action) {
         if (!hasBridge()) return;
+        // Slow status responses remain valid until completion or a bounded timeout.
+        String waiting = prefs.getString("active:" + action, "");
+        if (action.equals("status") && prefs.contains("pending:" + waiting)
+                && System.currentTimeMillis() - prefs.getLong("status_requested", 0) < 60000) return;
+        String token = UUID.randomUUID().toString();
         try {
             boolean interactive = action.equals("run") || action.equals("shell") || action.equals("edit");
             String app = selection();
             if (!app.matches("[a-zA-Z0-9_-]+")) throw new Exception("Neplatné cvičení.");
             Intent callback = new Intent(this, ResultReceiver.class);
-            String token = UUID.randomUUID().toString();
             callback.setData(Uri.parse("zephyr://result/" + token));
             String previous = prefs.getString("active:" + action, "");
-            prefs.edit().remove("pending:" + previous).putString("pending:" + token, action).putString("active:" + action, token).apply();
+            SharedPreferences.Editor edit = prefs.edit().remove("pending:" + previous).putString("pending:" + token, action).putString("active:" + action, token);
+            if (action.equals("status")) edit.putLong("status_requested", System.currentTimeMillis());
+            else edit.putString("error", "").remove("error_action");
+            edit.apply();
             int flags = PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_CANCEL_CURRENT;
             if (Build.VERSION.SDK_INT >= 31) flags |= PendingIntent.FLAG_MUTABLE;
             PendingIntent pending = PendingIntent.getBroadcast(this, token.hashCode(), callback, flags);
@@ -265,7 +281,11 @@ public final class MainActivity extends Activity {
             if (!action.equals("status")) say("Odesláno do Termuxu: " + action + ". Průběh se objeví níže.");
             // Start the terminal from our visible Activity; no overlay permission is needed.
             if (interactive) openTermux();
-        } catch (Exception error) { say("Propojení: " + error.getMessage() + "\nDokončete krok 2 a nechte Termux spuštěný."); }
+        } catch (Exception error) {
+            prefs.edit().remove("pending:" + token).remove("active:" + action).apply();
+            lastRequest = System.currentTimeMillis();
+            say("Propojení: " + error.getMessage() + "\nDokončete krok 2 a nechte Termux spuštěný.");
+        }
     }
 
     private void renderStatus() {
@@ -293,15 +313,14 @@ public final class MainActivity extends Activity {
     }
 
     private void download(boolean termux) {
-        if (downloading) { say("Stahování již probíhá."); return; }
-        downloading = true;
+        if (!downloading.compareAndSet(false, true)) { say("Stahování již probíhá."); return; }
         new Thread(() -> {
             try {
                 File apk = Updates.download(getApplicationContext(), termux, this::say);
                 prefs.edit().putString("ready_apk", apk.getName()).apply();
                 runOnUiThread(() -> { if (active) installApk(apk); });
             } catch (Exception error) { say("Stahování selhalo: " + error.getMessage()); }
-            finally { downloading = false; }
+            finally { downloading.set(false); }
         }, "github-download").start();
     }
     private void installApk(File apk) {

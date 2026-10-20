@@ -96,11 +96,22 @@ def latest_release():
 
 def update_manager():
     if subprocess.check_output(['git', '-C', str(REPO), 'status', '--porcelain'], text=True).strip():
-        raise RuntimeError('Správce obsahuje vlastní změny. Uložte je do Gitu před aktualizací.')
+        raise RuntimeError('Správce obsahuje vlastní změny. Automatická aktualizace je nepřepíše.')
     origin = subprocess.check_output(['git', '-C', str(REPO), 'remote', 'get-url', 'origin'], text=True).strip()
     if origin != REMOTE:
         raise RuntimeError('Repozitář správce má jiný origin; automatická aktualizace zastavena.')
+    version = read_json(REPO / 'environment.json')['version']
+    if not re.fullmatch(r'\d+\.\d+\.\d+', version):
+        raise RuntimeError('Neplatná místní verze správce.')
+    # A clean worktree can still contain private commits. Never detach away from them.
+    run('git', '-C', REPO, 'fetch', '--depth', '1', 'origin', 'tag', 'v' + version)
+    head = subprocess.check_output(['git', '-C', str(REPO), 'rev-parse', 'HEAD'], text=True).strip()
+    released = subprocess.check_output(['git', '-C', str(REPO), 'rev-parse', 'v' + version + '^{commit}'], text=True).strip()
+    if head != released:
+        raise RuntimeError('Správce obsahuje vlastní commity. Automatická aktualizace je nepřepíše.')
     tag = latest_release()
+    if tuple(map(int, tag[1:].split('.'))) < tuple(map(int, version.split('.'))):
+        raise RuntimeError('GitHub nabízí starší vydání; prostředí se nevrátí na starší verzi.')
     run('git', '-C', REPO, 'fetch', '--depth', '1', 'origin', 'tag', tag)
     run('git', '-C', REPO, 'checkout', '--detach', tag)
     print('Správce aktualizován na ' + tag, flush=True)
@@ -133,10 +144,13 @@ def backup():
     # symlinks remain symlinks (tar is deliberately not passed --dereference).
     # Open the output in native Termux. Android blocks the legacy creat syscall
     # used by GNU tar's compression child; writing through stdout avoids it.
-    with temporary.open('wb') as output:
-        guest('/bin/tar', '-czf', '-', '-C', '/work',
-              '--exclude=zephyr4squirrels/build', '--exclude=zephyr4squirrels/build-*', 'zephyr4squirrels', stdout=output)
-    temporary.replace(target)
+    try:
+        with temporary.open('wb') as output:
+            guest('/bin/tar', '-czf', '-', '-C', '/work',
+                  '--exclude=zephyr4squirrels/build', '--exclude=zephyr4squirrels/build-*', 'zephyr4squirrels', stdout=output)
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
     print('Záloha: ' + str(target), flush=True)
 
 

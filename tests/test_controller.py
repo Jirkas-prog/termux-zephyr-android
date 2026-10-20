@@ -78,6 +78,36 @@ class ControllerTest(unittest.TestCase):
             self.assertFalse(any('large.bin' in name for name in names))
             self.assertTrue(archive.getmember('zephyr4squirrels/link').issym())
 
+    def test_failed_backup_removes_partial_archive(self):
+        def fail(*args, **kwargs):
+            kwargs['stdout'].write(b'incomplete archive')
+            raise subprocess.CalledProcessError(1, 'tar')
+        with patch.object(ctl, 'guest', fail):
+            with self.assertRaises(subprocess.CalledProcessError):
+                ctl.backup()
+        self.assertFalse(list(ctl.WORK.glob('*.partial')))
+        self.assertFalse(list((ctl.HOME / 'zephyr-backups').iterdir()))
+
+    def test_manager_update_preserves_commits_and_refuses_downgrade(self):
+        def output(args, **kwargs):
+            if 'status' in args:
+                return ''
+            if 'get-url' in args:
+                return ctl.REMOTE
+            return 'custom' if args[-1] == 'HEAD' else 'released'
+        with patch.object(ctl.subprocess, 'check_output', side_effect=output), \
+             patch.object(ctl, 'read_json', return_value={'version': '1.0.2'}), \
+             patch.object(ctl, 'run') as run, patch.object(ctl, 'latest_release', return_value='v1.0.1'):
+            with self.assertRaisesRegex(RuntimeError, 'commity'):
+                ctl.update_manager()
+            self.assertFalse(any('checkout' in call.args for call in run.call_args_list))
+        with patch.object(ctl.subprocess, 'check_output', side_effect=['', ctl.REMOTE, 'released', 'released']), \
+             patch.object(ctl, 'read_json', return_value={'version': '1.0.2'}), \
+             patch.object(ctl, 'run') as run, patch.object(ctl, 'latest_release', return_value='v1.0.1'):
+            with self.assertRaisesRegex(RuntimeError, 'starší'):
+                ctl.update_manager()
+            self.assertFalse(any('checkout' in call.args for call in run.call_args_list))
+
 
 if __name__ == '__main__':
     unittest.main()

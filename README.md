@@ -61,6 +61,9 @@ Průvodce nežádá `su`, správce zařízení, služby přístupnosti ani oprá
 Po instalaci se skutečně sestaví `hello_world` pro `m5stack_fire/esp32/procpu`
 a zkontroluje text `Hello, squirrels! Zephyr is alive.` v ESP32 emulátoru.
 Teprve po tomto testu se prostředí označí jako nainstalované.
+Test používá původní zdroj z připnutého commitu v samostatné složce
+`~/zephyr-work/validation/`. Rozpracované cvičení ani jeho build se při opravě nemění;
+vlastní verzi příkladu sestavíte tlačítkem **Sestavit**.
 
 ## Ovládání
 
@@ -123,7 +126,10 @@ další souběžné operace, aby se neměnily soubory pod běžícím prostřed�
 - **Aktualizovat prostředí** nejprve zálohuje cvičení, stáhne nejnovější vydaný tag
   tohoto správce a aplikuje jím připnuté verze. Nenásleduje pohyblivou vývojovou větev Zephyru.
 - Změněné repozitáře se nepřepisují pomocí `reset --hard`. Vlastní úpravy správce či modulů
-  aktualizaci zastaví; větev cvičení se posouvá jen pomocí `--ff-only`.
+  aktualizaci zastaví; chráněné jsou i vlastní commity správce a Zephyru.
+  Větev cvičení se posouvá jen pomocí `--ff-only`. Oprava stejné verze kurzu zachová
+  rozpracované úpravy i vlastní commity. Jiný origin repozitáře se automaticky nepoužije.
+  Starší vydání správce se automaticky neinstaluje.
 - Záloha obsahuje cvičení i jejich `.git`, bez přeložených buildů, Ubuntu a SDK.
   Je místní: pro ochranu před ztrátou tabletu ji přeneste mimo zařízení.
 
@@ -183,7 +189,10 @@ ANDROID_SERIAL=emulator-5580 python3 tools/test-android.py
 ```
 
 Testy ověřují běžné UID aplikace, velikost dotykových prvků, Tab/Enter, dotyk,
-události kolečka myši/touchpadu a nápovědu. Nevyžadují root.
+události kolečka myši/touchpadu, nápovědu a zachování výběru při změně rozložení.
+Pro test pomalých odpovědí musí být Termux propojený a povolené spouštění příkazů.
+Testují se také dokončení callbacku a zachování chyb operací mezi obnovami stavu.
+Nevyžadují root. Python testy používají Linux/WSL a Python 3.12+.
 Průvodce byl ověřen na Androidu 15 (API 35), x86_64, v emulátoru na výšku i na šířku.
 Fyzický ARM64 tablet nebyl při vývoji připojen; jeho ovladače vstupu a řízení běhu
 na pozadí zatím nejsou ověřené. Instalační skripty vybírají ARM64 nástroje podle zařízení.
