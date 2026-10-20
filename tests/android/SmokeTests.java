@@ -132,6 +132,34 @@ public final class SmokeTests extends Instrumentation {
                     result.putString("stream", "PASS: slow callbacks, exercise selection after rotation, operation errors survive polling.");
                     finish(Activity.RESULT_OK, result); return;
                 }
+                if (operation.equals("pending-permission") || operation.equals("pending-install")) {
+                    android.content.SharedPreferences prefs = getTargetContext().getSharedPreferences("bridge", 0);
+                    require(prefs.getString("ready_apk", "").isEmpty(), "Do not overwrite a user's pending APK");
+                    require(new File(getTargetContext().getFilesDir(), "termux.apk").isFile(), "Run download-termux first");
+                    boolean allowed = getTargetContext().getPackageManager().canRequestPackageInstalls();
+                    require(allowed == operation.equals("pending-install"), "Set REQUEST_INSTALL_PACKAGES app-op for this test");
+                    java.lang.reflect.Method pending = MainActivity.class.getDeclaredMethod("pendingApk"); pending.setAccessible(true);
+                    try {
+                        prefs.edit().putString("ready_apk", "termux.apk").putBoolean("install_requested", allowed).commit();
+                        runOnMainSync(() -> {
+                            try { pending.invoke(activity); } catch (Exception error) { throw new AssertionError(error); }
+                        });
+                        SystemClock.sleep(2000);
+                        String shown = window().getPackageName().toString();
+                        require(allowed ? shown.contains("packageinstaller") : shown.equals("com.android.settings"), "Pending APK did not open the expected system screen: " + shown);
+                        key(KeyEvent.KEYCODE_BACK); SystemClock.sleep(3000);
+                        require("cz.zephyr.termux".contentEquals(window().getPackageName()), "Denied permission reopens settings in a loop");
+                        require(allowed ? !prefs.contains("ready_apk") : prefs.contains("ready_apk"), "Pending APK state is incorrect");
+                        if (!allowed) {
+                            runOnMainSync(() -> find(activity.getWindow().getDecorView(), "1  Stáhnout").performClick());
+                            SystemClock.sleep(1000);
+                            require("com.android.settings".contentEquals(window().getPackageName()), "Retry did not reuse the downloaded APK");
+                            key(KeyEvent.KEYCODE_BACK);
+                        }
+                    } finally { prefs.edit().remove("ready_apk").remove("install_requested").commit(); }
+                    result.putString("stream", "PASS: background APK completion, permission denial/retry and pending installation.");
+                    finish(Activity.RESULT_OK, result); return;
+                }
                 if (operation.equals("download-termux") || operation.equals("download-self")) {
                     File apk = Updates.download(getTargetContext(), operation.equals("download-termux"), message -> android.util.Log.i("ZephyrTest", message));
                     require(apk.length() > 10000, "Downloaded APK is incomplete");

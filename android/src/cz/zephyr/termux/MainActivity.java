@@ -60,8 +60,7 @@ public final class MainActivity extends Activity {
             if (!message.isEmpty() && !message.contentEquals(notice.getText())) notice.setText(message);
             renderStatus();
             if (hasBridge() && System.currentTimeMillis() - lastRequest > 5000) command("status");
-            String ready = prefs.getString("ready_apk", "");
-            if (!ready.isEmpty() && (Build.VERSION.SDK_INT < 26 || getPackageManager().canRequestPackageInstalls())) installApk(new File(getFilesDir(), ready));
+            pendingApk();
             handler.postDelayed(this, 1500);
         }
     };
@@ -87,8 +86,7 @@ public final class MainActivity extends Activity {
         super.onResume();
         active = true;
         handler.post(poll);
-        String ready = prefs.getString("ready_apk", "");
-        if (!ready.isEmpty() && (Build.VERSION.SDK_INT < 26 || getPackageManager().canRequestPackageInstalls())) installApk(new File(getFilesDir(), ready));
+        pendingApk();
     }
     @Override protected void onPause() { active = false; handler.removeCallbacks(poll); super.onPause(); }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
@@ -313,15 +311,30 @@ public final class MainActivity extends Activity {
     }
 
     private void download(boolean termux) {
+        String ready = prefs.getString("ready_apk", "");
+        if (ready.equals(termux ? "termux.apk" : "zephyr.apk")) {
+            prefs.edit().putBoolean("install_requested", false).apply();
+            pendingApk();
+            return;
+        }
         if (!downloading.compareAndSet(false, true)) { say("Stahování již probíhá."); return; }
         new Thread(() -> {
             try {
                 File apk = Updates.download(getApplicationContext(), termux, this::say);
-                prefs.edit().putString("ready_apk", apk.getName()).apply();
-                runOnUiThread(() -> { if (active) installApk(apk); });
+                prefs.edit().putString("ready_apk", apk.getName()).putBoolean("install_requested", false).apply();
+                runOnUiThread(() -> { if (active) pendingApk(); });
             } catch (Exception error) { say("Stahování selhalo: " + error.getMessage()); }
             finally { downloading.set(false); }
         }, "github-download").start();
+    }
+    private void pendingApk() {
+        String ready = prefs.getString("ready_apk", "");
+        if (ready.isEmpty()) return;
+        if (Build.VERSION.SDK_INT < 26 || getPackageManager().canRequestPackageInstalls()
+                || !prefs.getBoolean("install_requested", false)) {
+            prefs.edit().putBoolean("install_requested", true).apply();
+            installApk(new File(getFilesDir(), ready));
+        }
     }
     private void installApk(File apk) {
         try {
